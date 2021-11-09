@@ -1,7 +1,7 @@
 package com.jm.project.schooljournal.security.filter;
 
-import com.auth0.jwt.JWT;
-import com.jm.project.schooljournal.config.jwt.JwtUtils;
+import com.jm.project.schooljournal.exception.NotFoundException;
+import com.jm.project.schooljournal.security.jwt.JwtUtils;
 import com.jm.project.schooljournal.model.User;
 import com.jm.project.schooljournal.repository.UserRepository;
 import com.jm.project.schooljournal.security.jwt.JwtProperties;
@@ -11,8 +11,10 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
@@ -20,13 +22,11 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
-public class AuthorizationFilter extends BasicAuthenticationFilter {
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final UserRepository userRepository;
 
-    public AuthorizationFilter(AuthenticationManager authenticationManager,
-                               UserRepository userRepository) {
-        super(authenticationManager);
+    public JwtAuthenticationFilter(UserRepository userRepository) {
         this.userRepository = userRepository;
     }
 
@@ -50,15 +50,13 @@ public class AuthorizationFilter extends BasicAuthenticationFilter {
                 .replace(JwtProperties.TOKEN_PREFIX, "");
         if (!token.isEmpty()) {
             String username = JwtUtils.getUsernameFromToken(token);
-            if (username != null) {
-                User userDetails = userRepository.findUserByUsername(username);
-                return new UsernamePasswordAuthenticationToken(
-                        userDetails.getUsername(),
-                        null,
-                        userDetails.getAuthorities()
-                );
-            }
-            return null;
+            User user = userRepository.findUserByUsername(username)
+                    .orElseThrow(() -> new NotFoundException("User not found - " + username));
+            return new UsernamePasswordAuthenticationToken(
+                    user.getUsername(),
+                    null,
+                    user.getAuthorities()
+            );
         }
         return null;
     }

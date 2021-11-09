@@ -1,10 +1,9 @@
-package com.jm.project.schooljournal.config;
+package com.jm.project.schooljournal.security.config;
 
-import com.jm.project.schooljournal.config.jwt.AuthEntryPoint;
-import com.jm.project.schooljournal.model.User;
+import com.jm.project.schooljournal.exception.NotFoundException;
+import com.jm.project.schooljournal.security.handler.AuthEntryPoint;
 import com.jm.project.schooljournal.repository.UserRepository;
-//import com.jm.project.schooljournal.security.filter.AuthenticationFilter;
-import com.jm.project.schooljournal.security.filter.AuthorizationFilter;
+import com.jm.project.schooljournal.security.filter.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
@@ -12,9 +11,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -33,29 +32,25 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
     @Override
     protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-        auth.userDetailsService(username -> {
-            User user = userRepository.findUserByUsername(username);
-            if (user != null) {
-                return user;
-            }
-            throw new UsernameNotFoundException("User '" + username + "' not exists");
-        });
+        auth.userDetailsService(username ->
+                        userRepository.findUserByUsername(username)
+                                .orElseThrow(() -> new NotFoundException("User not found " + username)))
+                .passwordEncoder(passwordEncoder());
     }
 
     @Override
     protected void configure(HttpSecurity http) throws Exception {
         http
                 .cors()
-                    .and()
+                .and()
                 .csrf().disable()
                 .exceptionHandling().authenticationEntryPoint(unauthorizedHandler)
-                    .and()
+                .and()
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                    .and()
-//                .addFilter(new AuthenticationFilter(authenticationManager()))
-                .addFilter(new AuthorizationFilter(authenticationManagerBean(), userRepository))
+                .and()
+                .addFilterBefore(new JwtAuthenticationFilter(userRepository), UsernamePasswordAuthenticationFilter.class)
                 .authorizeRequests()
-                .antMatchers( "/auth/signin", "/auth/refresh", "/api/public/**").permitAll()
+                .antMatchers("/api/public", "/auth/**").permitAll()
                 .antMatchers("/api/user/**").hasAnyRole("USER", "ADMIN")
                 .antMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated();
@@ -71,8 +66,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource()
-    {
+    CorsConfigurationSource corsConfigurationSource() {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**",
                 new CorsConfiguration().applyPermitDefaultValues());
